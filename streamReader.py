@@ -7,7 +7,7 @@ import datetime
 # Logging configuration
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler('MobileControllerJarUpdate.log', 'w', 'utf-8')
+handler = logging.FileHandler('MobileControllerJarUpdate.log', 'a', 'utf-8')
 handler.setFormatter(logging.Formatter("%(asctime)s;%(levelname)s;%(message)s"))
 logger.addHandler(handler)
 
