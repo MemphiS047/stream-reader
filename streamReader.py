@@ -1,31 +1,87 @@
-import subprocess
-import concurrent.futures
 import logging
-import datetime
+import asyncio
+import sys
+import argparse
+import time
+import contextlib
 
-
-# Logging configuration
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler('MobileControllerJarUpdate.log', 'a', 'utf-8')
+handler = logging.FileHandler('streamReader.log', 'a', 'utf-8')
 handler.setFormatter(logging.Formatter("%(asctime)s;%(levelname)s;%(message)s"))
 logger.addHandler(handler)
 
-# Reads the stream of data in this case git pull is used for an example
-def read_stream():
-    process = subprocess.Popen(["/home/yigit/dev/github/stream-reader/dummyServer.sh"], stdout=subprocess.PIPE, shell=True)
-    while True:
-        output = process.stdout.readline()
-        if(output == '' and process.poll() is not None):
-            break
-        if(b'iteration 2' in output):
-            logging.info('MobileController.jar updated running updateOperation.sh')
-            git_update()
-    rc = process.poll()
-    return rc
-# Runs the update operation shell script which pulls repo then replaces the destinated files
-def git_update():
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        executor.submit(subprocess.Popen(["/home/yigit/dev/github/stream-reader/updateOperation.sh"], stdin=subprocess.PIPE, shell=True))
+async def cleanup(process):
+    if process:
+        process.terminate()
+        await process.wait()
+    logging.info('Process cleaned up')
 
-read_stream()
+async def read_stream(process, buffer, match_string='iteration 2'):
+    while True: 
+        print("!")
+        print("Buffer size is: " + str(buffer))
+        output = await process.stdout.read(buffer)
+        print("THE SUBPROCESS OUTPUT $$$$$$$$$$")
+        print(output)
+        if(output):
+            decoded_output = output.decode('utf-8')
+            if(match_string in decoded_output):
+                await worker(decoded_output)
+        else:
+            logging.info("Stream ended")
+            break
+    # except asyncio.CancelledError:
+    #     logging.exception('Exception occured')
+    #     logging.info('Cleaning up process')
+    #     cleanup(process)
+
+async def worker(decoded_output):
+    logging.info('Stream fragmenet is: ' + decoded_output[:5])
+    # print(output.decode('utf-8'))
+    # if(b'iteration 2' in output):
+    #     logging.info('Found the target string doing some other operation')
+    #     logging.info('Stream fragmenet is: ' + output.decode('utf-8')[:10])
+
+async def is_running(process):
+    print("Async process is running")
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(process.wait(), 1e-6)
+    return process.returncode is None
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="""Reads process standard output stream asynchronosuly
+                                                    and depending on some matching condition does an operation, 
+                                                    program has two options either provide the process as an argument
+                                                    or pipe the process standard output to the program""",
+                                    usage='\n%(prog)s [options] \n<stream> | %(prog)s [options]')
+    parser.add_argument('--log', type=str, default='INFO',
+                        help='Log level')
+    parser.add_argument('--process', type=str, default='INFO',
+                        help='Stream to read')
+    parser.add_argument('--buffer', type=int, default=1024,
+                        help='Buffer size')
+    return parser.parse_args()
+
+async def main():
+    args = parse_args()
+    if(len(sys.argv) > 1 and '--process' in sys.argv):
+        process = await asyncio.subprocess.create_subprocess_shell(
+            args.process,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await read_stream(process, args.buffer)
+    else:
+        process = await asyncio.subprocess.create_subprocess_shell(
+            sys.stdin.readline().strip(),
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await read_stream(process, args.buffer)
+
+if __name__ == "__main__":
+    s = time.perf_counter()
+    asyncio.run(main())
+    elapsed = time.perf_counter() - s
+    logging.info(f"{__file__} executed in {elapsed:0.2f} seconds.")
+    print(f"{__file__} executed in {elapsed:0.2f} seconds.")
+
