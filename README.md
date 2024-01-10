@@ -8,3 +8,7 @@ There is no dependency for this project. Just run the streamRead.py as shown bel
 python streamRead.py --match_string "ERROR" --process "python3 server.py"
 ```
 
+## Planned Features
+- [ ] Multiple match strings
+- [ ] Multiple processes
+- [ ] Regex matching
