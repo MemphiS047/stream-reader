@@ -1,47 +1,63 @@
 import asyncio
 import time
+import argparse
+import logging
+import sys
 
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+handler = logging.FileHandler('streamReader.log', 'a', 'utf-8')
+handler.setFormatter(logging.Formatter("%(asctime)s;%(levelname)s;%(message)s"))
+logger.addHandler(handler)
 
-async def read_stream(process):
-    buffer = 8
-    match_string = 'iteration 2'
-    output_buffer = b''
-    archived_buffer = b''
-    count = 0
-    while True:
-        print('\n')
-        output = await process.stdout.readline()
-        output_buffer += output
-        archived_buffer += output
-        print(output_buffer)
-        # print(archived_buffer)
-        if(match_string in output_buffer.decode('utf-8')):
-            # output_buffer = b''
-            if(count == 0):
+# Function that cleans up the process
+async def cleanup(process):
+    if process:
+        process.terminate()
+        await process.wait()
+    logging.info('Process cleaned up')
+
+# Function that reads the output stream of the server process
+async def read_stream(process, match_string, archived_buffer_size, output_buffer_size):
+    output_buffer = bytearray(output_buffer_size)
+    archived_buffer = bytearray(archived_buffer_size)
+    try:
+        while True:
+            output = await process.stdout.readline()
+            output_buffer += output
+            archived_buffer += output
+            if(match_string in output_buffer.decode('utf-8')):
                 await worker()
-            count += 1
-        # print("THE SUBPROCESS OUTPUT $$$$$$$$$$")
-        # print(output)
-        # if(output):
-        #     decoded_output = output.decode('utf-8')
-        #     if(match_string in decoded_output):
-        #         print("Math found")
-        # else:
-        #     break
+    except asyncio.CancelledError:
+        logging.exception('Exception occured')
+        logging.info('Cleaning up process')
+        cleanup(process)
+        
 # Worker function which does some operation, simulated using sleep instead
 # of actual operation
 async def worker():
     print("Worker function called")
-    time.sleep(6)
+    time.sleep(10)
     print("Worker function completed")
 
-async def main():
-    process = await asyncio.subprocess.create_subprocess_shell(
-        "python3 server.py",
-        stdout=asyncio.subprocess.PIPE,
-    )
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--match_string', type=str)
+    parser.add_argument('--process', type=str)
+    parser.add_argument('--archived_buffer_size', type=int)
+    parser.add_argument('--output_buffer_size', type=int)
+    return parser.parse_args()
 
-    await read_stream(process)
+async def main():
+    args = parse_args()
+    if(args.match_string):
+        process = await asyncio.subprocess.create_subprocess_shell(
+            args.process,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await read_stream(process, args.match_string, args.archived_buffer_size, args.output_buffer_size)
+    else:
+        print("No match string provided --help for more options")
 
 if __name__ == '__main__':
     asyncio.run(main())

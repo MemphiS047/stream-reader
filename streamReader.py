@@ -1,9 +1,8 @@
-import logging
 import asyncio
-import sys
-import argparse
 import time
-import contextlib
+import argparse
+import logging
+import sys
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -11,77 +10,54 @@ handler = logging.FileHandler('streamReader.log', 'a', 'utf-8')
 handler.setFormatter(logging.Formatter("%(asctime)s;%(levelname)s;%(message)s"))
 logger.addHandler(handler)
 
+# Function that cleans up the process
 async def cleanup(process):
     if process:
         process.terminate()
         await process.wait()
     logging.info('Process cleaned up')
 
-async def read_stream(process, buffer, match_string='iteration 2'):
-    while True: 
-        print("!")
-        print("Buffer size is: " + str(buffer))
-        output = await process.stdout.read(buffer)
-        print("THE SUBPROCESS OUTPUT $$$$$$$$$$")
-        print(output)
-        if(output):
-            decoded_output = output.decode('utf-8')
-            if(match_string in decoded_output):
-                await worker(decoded_output)
-        else:
-            logging.info("Stream ended")
-            break
-    # except asyncio.CancelledError:
-    #     logging.exception('Exception occured')
-    #     logging.info('Cleaning up process')
-    #     cleanup(process)
-
-async def worker(decoded_output):
-    logging.info('Stream fragmenet is: ' + decoded_output[:5])
-    # print(output.decode('utf-8'))
-    # if(b'iteration 2' in output):
-    #     logging.info('Found the target string doing some other operation')
-    #     logging.info('Stream fragmenet is: ' + output.decode('utf-8')[:10])
-
-async def is_running(process):
-    print("Async process is running")
-    with contextlib.suppress(asyncio.TimeoutError):
-        await asyncio.wait_for(process.wait(), 1e-6)
-    return process.returncode is None
+# Function that reads the output stream of the server process
+async def read_stream(process, match_string, archived_buffer_size, output_buffer_size):
+    output_buffer = bytearray(output_buffer_size)
+    archived_buffer = bytearray(archived_buffer_size)
+    try:
+        while True:
+            output = await process.stdout.readline()
+            output_buffer += output
+            archived_buffer += output
+            if(match_string in output_buffer.decode('utf-8')):
+                await worker()
+    except asyncio.CancelledError:
+        logging.exception('Exception occured')
+        logging.info('Cleaning up process')
+        cleanup(process)
+        
+# Worker function which does some operation, simulated using sleep instead
+# of actual  
+async def worker():
+    print("Worker function called")
+    time.sleep(10)
+    print("Worker function completed")
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="""Reads process standard output stream asynchronosuly
-                                                    and depending on some matching condition does an operation, 
-                                                    program has two options either provide the process as an argument
-                                                    or pipe the process standard output to the program""",
-                                    usage='\n%(prog)s [options] \n<stream> | %(prog)s [options]')
-    parser.add_argument('--log', type=str, default='INFO',
-                        help='Log level')
-    parser.add_argument('--process', type=str, default='INFO',
-                        help='Stream to read')
-    parser.add_argument('--buffer', type=int, default=1024,
-                        help='Buffer size')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--match_string', type=str)
+    parser.add_argument('--process', type=str)
+    parser.add_argument('--archived_buffer_size', type=int)
+    parser.add_argument('--output_buffer_size', type=int)
     return parser.parse_args()
 
 async def main():
     args = parse_args()
-    if(len(sys.argv) > 1 and '--process' in sys.argv):
+    if(args.match_string and args.process):
         process = await asyncio.subprocess.create_subprocess_shell(
             args.process,
             stdout=asyncio.subprocess.PIPE,
         )
-        await read_stream(process, args.buffer)
+        await read_stream(process, args.match_string, args.archived_buffer_size, args.output_buffer_size)
     else:
-        process = await asyncio.subprocess.create_subprocess_shell(
-            sys.stdin.readline().strip(),
-            stdout=asyncio.subprocess.PIPE,
-        )
-        await read_stream(process, args.buffer)
+        print("No match string or process is provided --help for more options")
 
-if __name__ == "__main__":
-    s = time.perf_counter()
+if __name__ == '__main__':
     asyncio.run(main())
-    elapsed = time.perf_counter() - s
-    logging.info(f"{__file__} executed in {elapsed:0.2f} seconds.")
-    print(f"{__file__} executed in {elapsed:0.2f} seconds.")
-
